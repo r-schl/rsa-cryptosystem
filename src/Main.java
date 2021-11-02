@@ -13,7 +13,7 @@ public class Main {
 
         System.out.println(publicKeyB.getBitLength());
 
-        String message = "HALLOHALLOHALLHAA";
+        String message = "Hallo";
         System.out.println(message.getBytes().length * 8);
 
         BigInteger encryptedMessage = RSA.encrypt(message, publicKeyB);

@@ -54,21 +54,14 @@ public class RSA {
         while (q.equals(p))
             q = getRandomPrime(bitLength / 2, PRNG);
 
-        System.out.println("p = " + p);
-        System.out.println("q = " + q);
-
         // Compute n as the product of p and q
         BigInteger n = p.multiply(q);
-        System.out.println("n = p * q = " + n);
         // Compute phi
         BigInteger phi = computePhi(p, q);
-        System.out.println("phi = " + phi);
         // Generate e
         BigInteger e = generateE(phi, n.bitLength(), PRNG);
-        System.out.println("e = " + e);
         // Compute d
         BigInteger d = computeD(e, phi);
-        System.out.println("d = " + d);
 
         return new RSA.Key[] { new RSA.Key(e, n), new RSA.Key(d, n) };
     }
@@ -170,7 +163,7 @@ public class RSA {
 
         @Override
         public String toString() {
-            return "RSA.Key(" + exponent + ", " + n + ")";
+            return "RSA.Key(" + n + ", " + exponent + ")";
         }
     }
 }
