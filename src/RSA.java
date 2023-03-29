@@ -4,66 +4,115 @@ import java.util.Random;
 
 public class RSA {
 
-    public static String hash(final String base, final String instance) {
+    /**
+     * This method calculates the hash of a integer number
+     * 
+     * @param base         data to be hashed
+     * @param hashInstance hash function to be used
+     * @return hash (decimal representation)
+     */
+    public static BigInteger hash(BigInteger base, final String hashInstance) {
         try {
-            final MessageDigest digest = MessageDigest.getInstance(instance);
-            final byte[] hash = digest.digest(base.getBytes("UTF-8"));
-            final StringBuilder hexString = new StringBuilder();
+            final MessageDigest digest = MessageDigest.getInstance(hashInstance);
+            final byte[] hash = digest.digest(base.toByteArray());
+            final StringBuilder hexStringBuilder = new StringBuilder();
             for (int i = 0; i < hash.length; i++) {
                 final String hex = Integer.toHexString(0xff & hash[i]);
                 if (hex.length() == 1)
-                    hexString.append('0');
-                hexString.append(hex);
+                    hexStringBuilder.append('0');
+                hexStringBuilder.append(hex);
             }
-            return hexString.toString();
+            return new BigInteger(hexStringBuilder.toString().getBytes());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static BigInteger sign(final String message, final String hashFunction, final RSA.Key signerPrivateKey) {
-        return encrypt(hash(message, hashFunction), signerPrivateKey);
+    /**
+     * This method calculates a signature for specified bytes.
+     * 
+     * @param plaintext        plaintext (decimal representation)
+     * @param hashInstance     A hash function that should be used
+     * @param signerPrivateKey The private key of the signer
+     * @return The signature (decimal representation)
+     */
+    public static BigInteger sign(final BigInteger plaintext, final String hashInstance,
+            final RSA.Key signerPrivateKey) {
+        return encrypt(hash(plaintext, hashInstance), signerPrivateKey);
     }
 
-    public static BigInteger encrypt(final String message, final RSA.Key key) {
-        return modPow(new BigInteger(message.getBytes()), key);
+    public static BigInteger encrypt(final BigInteger plaintext, final RSA.Key key) {
+        // TODO: padding
+        BigInteger m = plaintext;
+        BigInteger c = modPow(m, key);
+        return c;
     }
 
-    public static String decrypt(final BigInteger encryptedMessage, final RSA.Key key) {
-        return new String(modPow(encryptedMessage, key).toByteArray());
-    }
-
-    public static BigInteger modPow(final BigInteger m, final RSA.Key key) throws IllegalArgumentException {
-        if (m.compareTo(key.getN()) != -1)
-            throw new IllegalArgumentException("Integer m must be smaller than the modulus N");
-        return m.modPow(key.getExponent(), key.getN());
+    public static BigInteger decrypt(final BigInteger ciphertext, final RSA.Key key) {
+        // TODO: reverse padding
+        BigInteger c = ciphertext;
+        BigInteger m = modPow(c, key);
+        return m;
     }
 
     /**
-     * This method generates a key pair with a specified key bit length
+     * This method encrypts or decrypts a number (base) with a RSA key:
+     * base ^ key.exponent mod key.n
+     * 
+     * @param base The number that should be encrypted or decrypted
+     * @param key  The RSA key
+     * @return
+     * @throws IllegalArgumentException
+     */
+    private static BigInteger modPow(final BigInteger base, final RSA.Key key) throws IllegalArgumentException {
+        if (base.compareTo(key.getN()) != -1)
+            throw new IllegalArgumentException("Integer base must be smaller than the modulus N");
+        return base.modPow(key.getExponent(), key.getN());
+    }
+
+    /**
+     * This method generates interchangeable public and secret keys with a specified
+     * key bit length
      * 
      * @param bitLength The key bit length
      * @return An array that contains both keys
      */
     public static RSA.Key[] generateKeyPair(final int bitLength) {
-        Random PRNG = new Random();
-        // Generate two large random prime numbers p and q
-        BigInteger p = getRandomPrime(bitLength / 2, PRNG);
-        BigInteger q = getRandomPrime(bitLength / 2, PRNG);
-        // Make sure p is not equal to q
-        while (q.equals(p))
-            q = getRandomPrime(bitLength / 2, PRNG);
 
-        // Compute n as the product of p and q
-        BigInteger n = p.multiply(q);
-        // Compute phi
+        Random PRNG;
+        BigInteger p;
+        BigInteger q;
+        BigInteger n;
+
+        do {
+            PRNG = new Random();
+            // Generate two large random prime numbers p and q.
+            // Note that when multiplying two numbers p and q of the same bit length L, the
+            // product has a bit length of 2L or 2L-1. So to achieve a given bit length for
+            // n, both p and q must be about half as long as the given bit length.
+
+            p = getRandomPrime((int) Math.floor((float) bitLength / 2), PRNG);
+            q = getRandomPrime((int) Math.ceil((float) bitLength / 2), PRNG);
+            // Make sure p is not equal to q.
+            while (q.equals(p))
+                q = getRandomPrime((int) Math.ceil((float) bitLength / 2), PRNG);
+
+            // Compute n as the product of p and q.
+            n = p.multiply(q);
+            // If n does not have the specified length, calculate again.
+        } while (n.bitLength() != bitLength);
+
+        // Compute phi(n)
+        // https://en.wikipedia.org/wiki/Euler%27s_totient_function
         BigInteger phi = computePhi(p, q);
-        // Generate e
+        // Generate a random integer e such that e is coprime to phi(n) and 1 < e <
+        // phi(n)
         BigInteger e = generateE(phi, n.bitLength(), PRNG);
-        // Compute d
+        // Compute d such that e * d mod phi(n) = 1
+        // https://en.wikipedia.org/wiki/Modular_multiplicative_inverse
         BigInteger d = computeD(e, phi);
 
-        return new RSA.Key[] { new RSA.Key(e, n), new RSA.Key(d, n) };
+        return new RSA.Key[] { new RSA.Key(n, e), new RSA.Key(n, d) };
     }
 
     /**
@@ -90,8 +139,8 @@ public class RSA {
         BigInteger e;
         do {
             e = new BigInteger(bitLength, PRNG);
-            // e = getRandomPrime(bitLength);
-        } while (e.compareTo(phi) != -1 || !getGCD(e, phi).equals(BigInteger.ONE));
+            // If e is greater than phi(n) or e and phi(n) are not coprime, calculate again.
+        } while (e.compareTo(phi) != -1 || !isCoprime(e, phi));
         return e;
     }
 
@@ -122,18 +171,14 @@ public class RSA {
     }
 
     /**
-     * This method return the greatest common divisor (GCD) of two numbers a and b
+     * This method checks if two numbers a and b are coprime, i.e. if the GCD(a,b)=1
      * 
      * @param a First number
      * @param b Second number
-     * @return The greatest common divisor of a and b
+     * @return A boolean value (are a and b coprime?)
      */
-    private static BigInteger getGCD(final BigInteger a, final BigInteger b) {
-        if (b.equals(BigInteger.ZERO)) {
-            return a;
-        } else {
-            return getGCD(b, a.mod(b));
-        }
+    private static boolean isCoprime(final BigInteger a, final BigInteger b) {
+        return a.gcd(b).compareTo(BigInteger.ONE) == 0;
     }
 
     /**
@@ -144,9 +189,14 @@ public class RSA {
         private final BigInteger exponent;
         private final BigInteger n;
 
-        public Key(BigInteger exponent, BigInteger n) {
-            this.exponent = exponent;
+        public Key(BigInteger n, BigInteger exponent) {
             this.n = n;
+            this.exponent = exponent;
+        }
+
+        public Key(int n, int exponent) {
+            this.n = BigInteger.valueOf(n);
+            this.exponent = BigInteger.valueOf(exponent);
         }
 
         public BigInteger getExponent() {
@@ -157,13 +207,22 @@ public class RSA {
             return this.n;
         }
 
+        /**
+         * This method returns the position (start the count at 2^0) of the highest
+         * set bit (=1), i.e. the length of the binary representation of the number.
+         * e.g. bitlength(010101) = 5
+         * Note that positive numbers always need bit length + 1 bits (otherwise they
+         * are interpreted as negative numbers)
+         * 
+         * @return the bit length
+         */
         public long getBitLength() {
             return this.n.bitLength();
         }
 
         @Override
         public String toString() {
-            return "RSA.Key(" + n + ", " + exponent + ")";
+            return "Modulus N = " + n + "\n\nExponent (E/D) = " + exponent;
         }
     }
 }
